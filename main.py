@@ -2,6 +2,7 @@ import urllib.request
 import urllib.error
 import re
 from time import sleep # needed to avoid ban from alyrics
+from fake_useragent import UserAgent # also needed to avoid ban from azlyrics
 import random
 import time
 
@@ -11,7 +12,9 @@ url = "https://www.azlyrics.com/c/cure.html" # url of the artist page on azlyric
 
 def get_html_str (url):
     try:
-        html = urllib.request.urlopen(url)
+        # use a random user agent to avoid ban from azlyrics
+        req = urllib.request.Request(url, headers={'User-Agent': UserAgent().random})
+        html = urllib.request.urlopen(req)
         htmlstr = str(html.read())
         return htmlstr
     except urllib.error.HTTPError as e:
@@ -20,7 +23,7 @@ def get_html_str (url):
 
 def get_lyrics (url):
     html_str = get_html_str(url)
-    
+
     # if none is returned, return None
     if html_str == None:
         return None
@@ -48,26 +51,15 @@ artist_html_str = get_html_str(url)
 if artist_html_str == None:
     exit()
 
-""" links = re.findall('href="([^"]+)"', artist_html_str)
-
-song_links = []
-
-for x in links:
-    if "lyrics/cure" in x:
-        x = "https://www.azlyrics.com" + x
-        song_links.append(x) """
-        
+# get all the links to the songs of the artist
 song_links = re.findall('href="([^"]*lyrics/cure[^"]*)"', artist_html_str)
 song_links = list(map(lambda x: "https://www.azlyrics.com" + x, song_links))
 
-i = 0 # counter for the number of songs
-
-for x in song_links:
+for i, x in enumerate(song_links):
     lyrics = get_lyrics(x)
     if lyrics == None:
         continue
     lyrics_original.write(lyrics)
-    i += 1
     print(round(i / len(song_links) * 100, 2), "%", end='\r') # print the percentage of songs whose lyrics have been downloaded
     sleep (random.randint(2, 15)) # sleep for a random amount of time between 2 and 15 seconds to avoid ban from azlyrics
 
