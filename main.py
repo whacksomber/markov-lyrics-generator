@@ -7,9 +7,12 @@ lyrics_original = open('lyrics.txt', 'w')
 
 url = "https://www.azlyrics.com/c/cure.html"
 
-artist_html = urllib.request.urlopen(url)
+def get_html_str (url):
+    html = urllib.request.urlopen(url)
+    htmlstr = str(html.read())
+    return htmlstr
 
-artist_html_str = str(artist_html.read())
+artist_html_str = get_html_str(url)
 
 links = re.findall('href="([^"]+)"', artist_html_str)
 
@@ -25,9 +28,9 @@ disclaimer = "Usage of azlyrics.com content by any third-party lyrics provider i
 i = 0
 
 for x in songLinks:
-    songHtml = urllib.request.urlopen(x)
-    songHtmlStr = str(songHtml.read())
-    split = songHtmlStr.split(disclaimer,1)
+    song_html_str = get_html_str(x)
+    
+    split = song_html_str.split(disclaimer,1)
     split_html = split[1] #get everything after the disclaimer
     split = split_html.split('</div>',1) #get everything before the end of the lyrics
     lyrics = split[0]
