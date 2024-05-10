@@ -19,7 +19,7 @@ for x in links:
     if "lyrics/cure" in x:
         x = "https://www.azlyrics.com" + x
         songLinks.append(x)
-        
+
 disclaimer = "Usage of azlyrics.com content by any third-party lyrics provider is prohibited by our licensing agreement. Sorry about that. -->"
 
 i = 0
@@ -41,4 +41,4 @@ for x in songLinks:
     lyrics_original.write(lyrics)
     i += 1
     print(round(i / len(songLinks) * 100, 2), "%", end='\r')
-    sleep (random.randint(2, 10)) #sleep for a random amount of time between 2 and 10 seconds to avoid ban from azlyrics
+    sleep (random.randint(2, 15)) #sleep for a random amount of time between 2 and 10 seconds to avoid ban from azlyrics
