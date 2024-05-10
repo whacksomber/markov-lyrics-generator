@@ -2,6 +2,7 @@ import urllib.request
 import re
 from time import sleep # needed to avoid ban from alyrics
 import random
+import time
 
 lyrics_original = open('lyrics.txt', 'w')
 
@@ -11,6 +12,8 @@ def get_html_str (url):
     html = urllib.request.urlopen(url)
     htmlstr = str(html.read())
     return htmlstr
+
+start_time = time.time() # start time of the program
 
 artist_html_str = get_html_str(url)
 
@@ -45,3 +48,6 @@ for x in songLinks:
     i += 1
     print(round(i / len(songLinks) * 100, 2), "%", end='\r')
     sleep (random.randint(2, 15)) #sleep for a random amount of time between 2 and 10 seconds to avoid ban from azlyrics
+    
+lyrics_original.close()
+print("--- %s seconds ---" % round(time.time() - start_time, 2))
