@@ -8,8 +8,6 @@ from alive_progress import alive_it
 import markovify
 from bs4 import BeautifulSoup
 
-# DISCLAIMER = "Usage of azlyrics.com content by any third-party lyrics provider is prohibited by our licensing agreement. Sorry about that. -->"
-
 def get_html_str (url):
     try:
         # get the html of the page, using a random user agent to avoid ban from azlyrics
@@ -43,9 +41,28 @@ def get_song_links(url):
 
     return song_links
 
+def get_user_input ():        
+    while True:
+        artist = input('Enter the name of the artist: ').strip() # ask for user input
+
+        # if artist starts with the, remove it
+        if artist.lower().startswith('the '):
+            artist = artist[4:]
+        
+        url = f"https://www.azlyrics.com/{artist[0].lower()}/{artist.lower().replace(' ', '')}.html" # url of the artist page on azlyrics
+
+        header = BeautifulSoup(get_html_str(url), 'html.parser').find('h1')
+
+        # check if h2 = ... lyrics using regex
+        if not re.match(r'.+? Lyrics', header.text):
+            print('No artist page found, try again\n')
+        else:
+            return url
+
 start_time = time.time() # start time of the program
 
-url = "https://www.azlyrics.com/a/acidbath.html" # url of the artist page on azlyrics
+url = get_user_input()
+
 lyrics_original = open('lyrics.txt', 'w', encoding='utf-8') # open a file to write the lyrics to
 song_links = get_song_links(url)
 
