@@ -1,31 +1,30 @@
-import urllib.request
-import urllib.error
+import requests
 import re
 from time import sleep # needed to avoid ban from alyrics
 from fake_useragent import UserAgent # also needed to avoid ban from azlyrics
 import random
 import time
+from alive_progress import alive_it
+import markovify
 
 disclaimer = "Usage of azlyrics.com content by any third-party lyrics provider is prohibited by our licensing agreement. Sorry about that. -->"
 
-url = "https://www.azlyrics.com/c/cure.html" # url of the artist page on azlyrics
+url = "https://www.azlyrics.com/a/acidbath.html" # url of the artist page on azlyrics
 
 def get_html_str (url):
     try:
-        # use a random user agent to avoid ban from azlyrics
-        req = urllib.request.Request(url, headers={'User-Agent': UserAgent().random})
-        html = urllib.request.urlopen(req)
-        htmlstr = str(html.read())
-        return htmlstr
-    except urllib.error.HTTPError as e:
-        print("ERROR: ", e.code)
+        # get the html of the page, using a random user agent to avoid ban from azlyrics
+        r = requests.get(url, headers={'User-Agent': UserAgent().random})
+        return r.text
+    except requests.exceptions.RequestException as e:
+        print("Oops! An error occured: ", e)
         return None
 
 def get_lyrics (url):
     html_str = get_html_str(url)
 
-    # if none is returned, return None
     if html_str == None:
+        print('No lyrics page found for: ', url)
         return None
 
     split = html_str.split(disclaimer,1)
@@ -44,25 +43,41 @@ def get_lyrics (url):
 
 start_time = time.time() # start time of the program
 
-lyrics_original = open('lyrics.txt', 'w') # open a file to write the lyrics to
+lyrics_original = open('lyrics.txt', 'w', encoding='utf-8') # open a file to write the lyrics to
 
 artist_html_str = get_html_str(url)
 
 if artist_html_str == None:
+    print('No artist page found')
     exit()
 
 # get all the links to the songs of the artist
-song_links = re.findall('href="([^"]*lyrics/cure[^"]*)"', artist_html_str)
+song_links = re.findall(r'href="([^"]*lyrics/[^"]*)"', artist_html_str)
 song_links = list(map(lambda x: "https://www.azlyrics.com" + x, song_links))
 
-for i, x in enumerate(song_links):
+print('Number of songs found: ', len(song_links))
+
+for x in alive_it(song_links):
     lyrics = get_lyrics(x)
     if lyrics == None:
         continue
     lyrics_original.write(lyrics)
-    print(round(i / len(song_links) * 100, 2), "%", end='\r') # print the percentage of songs whose lyrics have been downloaded
-    sleep (random.randint(2, 15)) # sleep for a random amount of time between 2 and 15 seconds to avoid ban from azlyrics
+    sleep (random.randint(2, 10)) # sleep for a random amount of time between 2 and 10 seconds to avoid ban from azlyrics
+lyrics_original.close()
 
-lyrics_original.close() # close the file
+file = open('lyrics.txt', 'r') # open the file with the lyrics in read mode
+
+generatedlyrics = ()
+text = file.read()
+
+if text == '':
+    print('No lyrics found.')
+    exit()
+
+file.close()
+markovifyTextModel = markovify.Text(text)
+generatedlyrics = markovifyTextModel.make_sentence()
+
+print(generatedlyrics)
 
 print("--- %s seconds ---" % round(time.time() - start_time, 2)) # print the time it took to run the program
