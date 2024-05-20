@@ -42,6 +42,7 @@ def get_song_links(url):
 
     return song_links
 
+
 def get_artist_url ():
     while True:
         artist = input('Enter the name of the artist: ').strip().lower() # ask for user input
@@ -74,6 +75,9 @@ def get_num_lines():
         else:
             return int(num_lines)
 
+def get_user_input ():
+    return get_artist_url(), get_num_lines()
+
 def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
     with open(file_name, 'r', encoding='utf-8') as file:
         text = file.read()
@@ -98,7 +102,7 @@ def write_lyrics_file(url, file_name = "lyrics.txt"):
     print('Number of songs found: ', len(song_links))
 
     with open('lyrics.txt', 'w', encoding='utf-8') as lyrics_original:
-        for x in alive_it(song_links):
+        for x in alive_it(song_links, spinner=None):
             lyrics = get_lyrics(x)
             if not lyrics:
                 continue
@@ -107,8 +111,7 @@ def write_lyrics_file(url, file_name = "lyrics.txt"):
 
 start_time = time.time() # start time of the program
 
-url = get_artist_url()
-num_lines = get_num_lines()
+url, num_lines = get_user_input()
 write_lyrics_file(url)
 generate_markov_lines(num_lines)
 
