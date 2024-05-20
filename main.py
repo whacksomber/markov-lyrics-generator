@@ -8,6 +8,8 @@ from alive_progress import alive_it
 import markovify
 from bs4 import BeautifulSoup
 
+URL_PREFIX = "https://www.azlyrics.com"
+
 def get_html_str (url):
     try:
         # get the html of the page, using a random user agent to avoid ban from azlyrics
@@ -36,7 +38,7 @@ def get_song_links(url):
         return []
 
     soup = BeautifulSoup(artist_html_str, 'lxml')
-    song_links = [f"https://www.azlyrics.com{link['href']}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
+    song_links = [f"{URL_PREFIX}{link['href']}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
 
     return song_links
 
@@ -47,7 +49,7 @@ def get_artist_url ():
         if artist.startswith('the '):
             artist = artist[4:]
         
-        url = f"https://www.azlyrics.com/{artist[0]}/{artist.replace(' ', '')}.html" # url of the artist page on azlyrics
+        url = f"{URL_PREFIX}/{artist[0]}/{artist.replace(' ', '')}.html" # url of the artist page on azlyrics
         
         try:
             html_str = get_html_str(url)
@@ -101,7 +103,7 @@ def write_lyrics_file(url, file_name = "lyrics.txt"):
             if not lyrics:
                 continue
             lyrics_original.write(lyrics)
-            sleep (random.randint(2, 7)) # sleep for a random amount of time between 2 and 7 seconds to avoid ban from azlyrics
+            sleep (random.randint(2, 10)) # sleep for a random amount of time between 2 and 7 seconds to avoid ban from azlyrics
 
 start_time = time.time() # start time of the program
 
