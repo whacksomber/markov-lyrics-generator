@@ -12,10 +12,10 @@ def get_html_str (url):
     try:
         # get the html of the page, using a random user agent to avoid ban from azlyrics
         r = requests.get(url, headers={'User-Agent': UserAgent().random})
+        r.raise_for_status()
         return r.text
     except requests.exceptions.RequestException as e:
-        print("Oops! An error occured: ", e)
-        return None
+        raise RuntimeError(f"Error fetching HTML: {e}")
 
 def get_lyrics (url):
     html_str = get_html_str(url)
@@ -23,10 +23,10 @@ def get_lyrics (url):
     if not html_str:
         print(f'No lyrics page found for: {url}')
         return None
-    
+
     soup = BeautifulSoup(html_str, 'lxml')
     lyrics = soup.find('div', class_="col-xs-12 col-lg-8 text-center").find(lambda tag: tag.name == 'div' and not tag.attrs)
-    return re.sub(r'\[.*?\]', '', lyrics.text)
+    return re.sub(r'\[.*?\]', '', lyrics.text) if lyrics else None
 
 def get_song_links(url):
     artist_html_str = get_html_str(url)
@@ -36,36 +36,49 @@ def get_song_links(url):
         return []
 
     soup = BeautifulSoup(artist_html_str, 'lxml')
-    
     song_links = [f"https://www.azlyrics.com{link['href']}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
 
     return song_links
 
-def get_user_input ():
+def get_artist_url ():
     while True:
-        artist = input('Enter the name of the artist: ').strip() # ask for user input
+        artist = input('Enter the name of the artist: ').strip().lower() # ask for user input
 
-        # if artist starts with the, remove it
-        if artist.lower().startswith('the '):
+        if artist.startswith('the '):
             artist = artist[4:]
         
-        url = f"https://www.azlyrics.com/{artist[0].lower()}/{artist.lower().replace(' ', '')}.html" # url of the artist page on azlyrics
+        url = f"https://www.azlyrics.com/{artist[0]}/{artist.replace(' ', '')}.html" # url of the artist page on azlyrics
+        
+        try:
+            html_str = get_html_str(url)
+        except:
+            print('No artist page found, try again\n')
+            continue
+        
+        header = BeautifulSoup(html_str, 'lxml').find('h1')
 
-        header = BeautifulSoup(get_html_str(url), 'lxml').find('h1')
-
-        # check if h2 = ... lyrics using regex
+        # all artists page have [artist name] Lyrics as the header, so we can use this to check if the artist page exists
         if not re.match(r'.+? Lyrics', header.text):
             print('No artist page found, try again\n')
         else:
             return url
 
+def get_num_lines():
+    while True:
+        num_lines = input('Enter the number of lines of lyrics you want to generate: ')
+        
+        if not num_lines or not num_lines.isdigit():
+            print('Invalid input. Try again. ')
+        else:
+            return int(num_lines)
+
 def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
-    with open(file_name, 'r') as file:
+    with open(file_name, 'r', encoding='utf-8') as file:
         text = file.read()
 
-        if text == '':
+        if not text:
             print('No lyrics found.')
-            exit()
+            return
 
     markovifyTextModel = markovify.Text(text)
 
@@ -74,27 +87,27 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
         print(line)
 
 def write_lyrics_file(url, file_name = "lyrics.txt"):
+    song_links = get_song_links(url)
+
+    if not song_links:
+        print('No songs found')
+        return
+
+    print('Number of songs found: ', len(song_links))
+
     with open('lyrics.txt', 'w', encoding='utf-8') as lyrics_original:
-        song_links = get_song_links(url)
-
-        if song_links == []:
-            print('No songs found')
-            exit()
-
-        print('Number of songs found: ', len(song_links))
-
         for x in alive_it(song_links):
             lyrics = get_lyrics(x)
             if not lyrics:
                 continue
             lyrics_original.write(lyrics)
-            sleep (random.randint(2, 10)) # sleep for a random amount of time between 2 and 10 seconds to avoid ban from azlyrics
+            sleep (random.randint(2, 7)) # sleep for a random amount of time between 2 and 7 seconds to avoid ban from azlyrics
 
 start_time = time.time() # start time of the program
 
-url = get_user_input()
-num_lines = int(input('Enter the number of lines of lyrics you want to generate: '))
+url = get_artist_url()
+num_lines = get_num_lines()
 write_lyrics_file(url)
 generate_markov_lines(num_lines)
 
-print("--- %s seconds ---" % round(time.time() - start_time, 2)) # print the time it took to run the program
+print("--- %s seconds---" % round(time.time() - start_time, 2)) # print the time it took to run the program
