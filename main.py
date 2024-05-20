@@ -24,7 +24,7 @@ def get_lyrics (url):
         print(f'No lyrics page found for: {url}')
         return None
     
-    soup = BeautifulSoup(html_str, 'html.parser')
+    soup = BeautifulSoup(html_str, 'lxml')
     lyrics = soup.find('div', class_="col-xs-12 col-lg-8 text-center").find(lambda tag: tag.name == 'div' and not tag.attrs)
     return re.sub(r'\[.*?\]', '', lyrics.text)
 
@@ -35,7 +35,7 @@ def get_song_links(url):
         print('No artist page found')
         return []
 
-    soup = BeautifulSoup(artist_html_str, 'html.parser')
+    soup = BeautifulSoup(artist_html_str, 'lxml')
     
     song_links = [f"https://www.azlyrics.com{link['href']}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
 
@@ -51,7 +51,7 @@ def get_user_input ():
         
         url = f"https://www.azlyrics.com/{artist[0].lower()}/{artist.lower().replace(' ', '')}.html" # url of the artist page on azlyrics
 
-        header = BeautifulSoup(get_html_str(url), 'html.parser').find('h1')
+        header = BeautifulSoup(get_html_str(url), 'lxml').find('h1')
 
         # check if h2 = ... lyrics using regex
         if not re.match(r'.+? Lyrics', header.text):
