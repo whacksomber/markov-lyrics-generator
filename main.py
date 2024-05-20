@@ -41,7 +41,7 @@ def get_song_links(url):
 
     return song_links
 
-def get_user_input ():        
+def get_user_input ():
     while True:
         artist = input('Enter the name of the artist: ').strip() # ask for user input
 
@@ -63,6 +63,8 @@ start_time = time.time() # start time of the program
 
 url = get_user_input()
 
+num_lines = int(input('Enter the number of lines of lyrics you want to generate: '))
+
 lyrics_original = open('lyrics.txt', 'w', encoding='utf-8') # open a file to write the lyrics to
 song_links = get_song_links(url)
 
@@ -81,8 +83,6 @@ for x in alive_it(song_links):
 lyrics_original.close()
 
 file = open('lyrics.txt', 'r') # open the file with the lyrics in read mode
-
-generatedlyrics = ()
 text = file.read()
 
 if text == '':
@@ -92,8 +92,9 @@ if text == '':
 file.close()
 
 markovifyTextModel = markovify.Text(text)
-generatedlyrics = markovifyTextModel.make_sentence()
 
-print(generatedlyrics)
+for i in range(num_lines):
+    line = markovifyTextModel.make_sentence()
+    print(line)
 
 print("--- %s seconds ---" % round(time.time() - start_time, 2)) # print the time it took to run the program
