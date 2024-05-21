@@ -42,14 +42,17 @@ def get_song_links(url):
 
     return song_links
 
+def clean_up_artist_name (name):
+    if name.startswith('the '):
+        name = name[4:]
+        
+    return name.strip().lower().replace(' ', '')
+
 def get_artist_url ():
     while True:
-        artist = input('Enter the name of the artist: ').strip().lower() # ask for user input
-
-        if artist.startswith('the '):
-            artist = artist[4:]
+        artist = clean_up_artist_name(input('Enter the name of the artist: ')) # ask for user input
         
-        url = f"{URL_PREFIX}{artist[0]}/{artist.replace(' ', '')}.html" # url of the artist page on azlyrics
+        url = f"{URL_PREFIX}{artist[0]}/{artist}.html" # url of the artist page on azlyrics
         
         try:
             html_str = get_html_str(url)
