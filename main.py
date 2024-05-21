@@ -8,7 +8,7 @@ from alive_progress import alive_it
 import markovify
 from bs4 import BeautifulSoup
 
-URL_PREFIX = "https://www.azlyrics.com"
+URL_PREFIX = "https://www.azlyrics.com/"
 
 def get_html_str (url):
     try:
@@ -38,10 +38,9 @@ def get_song_links(url):
         return []
 
     soup = BeautifulSoup(artist_html_str, 'lxml')
-    song_links = [f"{URL_PREFIX}{link['href']}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
+    song_links = [f"{URL_PREFIX}{link['href'][1:]}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
 
     return song_links
-
 
 def get_artist_url ():
     while True:
@@ -50,7 +49,7 @@ def get_artist_url ():
         if artist.startswith('the '):
             artist = artist[4:]
         
-        url = f"{URL_PREFIX}/{artist[0]}/{artist.replace(' ', '')}.html" # url of the artist page on azlyrics
+        url = f"{URL_PREFIX}{artist[0]}/{artist.replace(' ', '')}.html" # url of the artist page on azlyrics
         
         try:
             html_str = get_html_str(url)
