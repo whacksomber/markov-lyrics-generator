@@ -1,25 +1,28 @@
 import requests
 import re
-from time import sleep # needed to avoid ban from alyrics
 from fake_useragent import UserAgent # also needed to avoid ban from azlyrics
 import random
 import time
+from time import sleep
 from alive_progress import alive_it
 import markovify
 from bs4 import BeautifulSoup
 
 URL_PREFIX = "https://www.azlyrics.com/"
 
-def get_html_str (url):
+def get_html_str(url):
     try:
-        # get the html of the page, using a random user agent to avoid ban from azlyrics
         r = requests.get(url, headers={'User-Agent': UserAgent().random})
         r.raise_for_status()
         return r.text
-    # except requests.exceptions.HTTPError as e:
-    #     raise RuntimeError(f"HTTP Error occurred: {e}")
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Error fetching HTML: {e}")
+        error_message = {
+            requests.exceptions.HTTPError: f"HTTP ERROR! {e} \n (Likely a result of too many accesses in too little time.)",
+            requests.exceptions.ConnectionError: f"Error connecting to the URL: {e}",
+            requests.exceptions.Timeout: f"Timeout occurred while fetching HTML: {e}",
+        }.get(type(e), f"An error occurred while fetching HTML: {e}")
+        
+        raise RuntimeError(error_message)
 
 def get_lyrics (url):
     try:
@@ -47,11 +50,10 @@ def clean_up_artist_name (name):
     return name.strip().lower().replace(' ', '')
 
 def get_artist_url ():
-    while True:
-        artist = clean_up_artist_name(input('Enter the name of the artist: ')) # ask for user input
-        url = f"{URL_PREFIX}{artist[0]}/{artist}.html" # url of the artist page on azlyrics
-        
+    while True:        
         try:
+            artist = clean_up_artist_name(input('Enter the name of the artist: ')) # ask for user input
+            url = f"{URL_PREFIX}{artist[0]}/{artist}.html" # url of the artist page on azlyrics
             html_str = get_html_str(url)
             header = BeautifulSoup(html_str, 'lxml').find('h1')
             
@@ -59,6 +61,8 @@ def get_artist_url ():
             if re.match(r'.+? Lyrics', header.text):
                 return url
             print('No artist page found, try again\n')
+        except IndexError:
+            print('Invalid entry. Try again. \n')
         except RuntimeError as e:
             print(str(e))
             
