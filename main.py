@@ -16,31 +16,29 @@ def get_html_str (url):
         r = requests.get(url, headers={'User-Agent': UserAgent().random})
         r.raise_for_status()
         return r.text
+    # except requests.exceptions.HTTPError as e:
+    #     raise RuntimeError(f"HTTP Error occurred: {e}")
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Error fetching HTML: {e}")
 
 def get_lyrics (url):
-    html_str = get_html_str(url)
-
-    if not html_str:
-        print(f'No lyrics page found for: {url}')
+    try:
+        html_str = get_html_str(url)
+        soup = BeautifulSoup(html_str, 'lxml')
+        lyrics = soup.find('div', class_="col-xs-12 col-lg-8 text-center").find(lambda tag: tag.name == 'div' and not tag.attrs)
+        return re.sub(r'\[.*?\]', '', lyrics.text) if lyrics else None
+    except RuntimeError as e:
+        print(str(e))
         return None
 
-    soup = BeautifulSoup(html_str, 'lxml')
-    lyrics = soup.find('div', class_="col-xs-12 col-lg-8 text-center").find(lambda tag: tag.name == 'div' and not tag.attrs)
-    return re.sub(r'\[.*?\]', '', lyrics.text) if lyrics else None
-
 def get_song_links(url):
-    artist_html_str = get_html_str(url)
-
-    if not artist_html_str:
-        print('No artist page found')
-        return []
-
-    soup = BeautifulSoup(artist_html_str, 'lxml')
-    song_links = [f"{URL_PREFIX}{link['href'][1:]}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
-
-    return song_links
+    try:
+        artist_html_str = get_html_str(url)
+        soup = BeautifulSoup(artist_html_str, 'lxml')
+        return [f"{URL_PREFIX}{link['href'][1:]}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
+    except RuntimeError as e:
+        print(str(e))
+        return None
 
 def clean_up_artist_name (name):
     if name.startswith('the '):
@@ -51,22 +49,23 @@ def clean_up_artist_name (name):
 def get_artist_url ():
     while True:
         artist = clean_up_artist_name(input('Enter the name of the artist: ')) # ask for user input
-        
         url = f"{URL_PREFIX}{artist[0]}/{artist}.html" # url of the artist page on azlyrics
         
         try:
             html_str = get_html_str(url)
-        except:
+            header = BeautifulSoup(html_str, 'lxml').find('h1')
+            
+            # all artists page have [artist name] Lyrics as the header, so we can use this to check if the artist page exists
+            if re.match(r'.+? Lyrics', header.text):
+                return url
             print('No artist page found, try again\n')
-            continue
-        
-        header = BeautifulSoup(html_str, 'lxml').find('h1')
-
-        # all artists page have [artist name] Lyrics as the header, so we can use this to check if the artist page exists
-        if not re.match(r'.+? Lyrics', header.text):
-            print('No artist page found, try again\n')
-        else:
-            return url
+        except RuntimeError as e:
+            print(str(e))
+            
+            # give user a chance to either try again or exit
+            user_input = input('Exit? (y/n): ')
+            if user_input.lower() == 'y':
+                exit()
 
 def get_num_lines():
     while True:
@@ -81,18 +80,20 @@ def get_user_input ():
     return get_artist_url(), get_num_lines()
 
 def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
-    with open(file_name, 'r', encoding='utf-8') as file:
-        text = file.read()
-
-        if not text:
-            print('No lyrics found.')
-            return
-
-    markovifyTextModel = markovify.Text(text)
-
-    for i in range(num_lines):
-        line = markovifyTextModel.make_sentence()
-        print(line)
+    try:
+        with open(file_name, 'r', encoding='utf-8') as file:
+            text = file.read()
+            if not text:
+                print('No lyrics found.')
+                return
+            
+        markovifyTextModel = markovify.Text(text)
+        
+        for i in range(num_lines):
+            line = markovifyTextModel.make_sentence()
+            print(line)
+    except FileNotFoundError:
+        print('No lyrics file found.')
 
 def write_lyrics_file(url, file_name = "lyrics.txt"):
     song_links = get_song_links(url)
@@ -102,8 +103,7 @@ def write_lyrics_file(url, file_name = "lyrics.txt"):
         return
 
     print('Number of songs found: ', len(song_links))
-
-    with open('lyrics.txt', 'w', encoding='utf-8') as lyrics_original:
+    with open(file_name, 'w', encoding='utf-8') as lyrics_original:
         for x in alive_it(song_links, spinner=None):
             lyrics = get_lyrics(x)
             if not lyrics:
