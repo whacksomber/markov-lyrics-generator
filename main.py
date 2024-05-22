@@ -46,7 +46,6 @@ def get_song_links(url):
 def clean_up_artist_name (name):
     if name.startswith('the '):
         name = name[4:]
-        
     return name.strip().lower().replace(' ', '')
 
 def get_artist_url ():
@@ -65,7 +64,6 @@ def get_artist_url ():
             print('Invalid entry. Try again. \n')
         except RuntimeError as e:
             print(str(e))
-            
             # give user a chance to either try again or exit
             user_input = input('Exit? (y/n): ')
             if user_input.lower() == 'y':
