@@ -8,44 +8,24 @@ from bs4 import BeautifulSoup
 from tkinter import *
 from tkinter import ttk
 import threading
+import musicbrainzngs
+from musicbrainzngs import WebServiceError
+from musicbrainzngs import NetworkError
+import json
+import lyricsgenius
+from functools import lru_cache
 
-URL_PREFIX = "https://www.azlyrics.com/"
+GENIUS_CLIENT_ID = '<REDACTED>'
+GENIUS_CLIENT_SECRET = '<REDACTED>'
+GENIUS_ACCESS_TOKEN = '<REDACTED>'
 
-ARTIST_URL = ""
+genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN)
+musicbrainzngs.set_useragent("Markov Lyrics Generator", "0.1")
+
 NUM_LINES = 0
+ARTIST_NAME = ""
 
-def get_html_str(url):
-    try:
-        r = requests.get(url, headers={'User-Agent': UserAgent().random})
-        r.raise_for_status()
-        return r.text
-    except requests.exceptions.RequestException as e:
-        error_message = {
-            requests.exceptions.HTTPError: f"HTTP ERROR! {e}",
-            requests.exceptions.ConnectionError: f"Error connecting to the URL: {e}",
-            requests.exceptions.Timeout: f"Timeout occurred while fetching HTML: {e}",
-        }.get(type(e), f"An error occurred while fetching HTML: {e}")
-        
-        raise RuntimeError(error_message)
-
-def get_lyrics (url):
-    try:
-        html_str = get_html_str(url)
-        soup = BeautifulSoup(html_str, 'lxml')
-        lyrics = soup.find('div', class_="col-xs-12 col-lg-8 text-center").find(lambda tag: tag.name == 'div' and not tag.attrs)
-        return re.sub(r'\[.*?\]', '', lyrics.text) if lyrics else None
-    except RuntimeError as e:
-        print(str(e))
-        return None
-
-def get_song_links(url):
-    try:
-        artist_html_str = get_html_str(url)
-        soup = BeautifulSoup(artist_html_str, 'lxml')
-        return [f"{URL_PREFIX}{link['href'][1:]}" for link in soup.find_all('a', href=True)if '/lyrics/' in link['href']]
-    except RuntimeError as e:
-        print(str(e))
-        return None
+ALL_SONGS = []
 
 def clean_up_artist_name (name):
     if name.startswith('the '):
@@ -62,18 +42,15 @@ def disable_fields():
     for w in root.winfo_children():
         w['state'] = 'disabled'
 
-def get_artist_url ():
+def get_artist_name ():
     try:
-        artist = clean_up_artist_name(artist_var.get())
-        url = f"{URL_PREFIX}{artist[0]}/{artist}.html" # url of the artist page on azlyrics
-        html_str = get_html_str(url)
-    except IndexError:
-        processing_label['text'] = "Input field left empty! Try again."
-        enable_fields()
+        artist = artist_var.get()
+        if not artist:
+            raise RuntimeError("Input field left empty! Try again.")
     except RuntimeError as e:
         raise RuntimeError(str(e))
     
-    return url
+    return artist
 
 def get_num_lines():
     try:
@@ -83,33 +60,111 @@ def get_num_lines():
         return None
     return num_lines
 
+# * I think this should be good enough
 def get_user_input ():
     global NUM_LINES
-    global ARTIST_URL
+    # global ARTIST_URL
+    global ARTIST_NAME
     
-    NUM_LINES = get_num_lines()
+    NUM_LINES = get_num_lines() # this remains unchanged!
     
     try:
-        ARTIST_URL = get_artist_url()
+        # ARTIST_URL = get_artist_url()
+        ARTIST_NAME = get_artist_name()
     except RuntimeError as e:
         processing_label['text'] = str(e)
         enable_fields()
         raise RuntimeError(str(e))
     
-    if not NUM_LINES or not ARTIST_URL or NUM_LINES < 1:
+    if not NUM_LINES or not ARTIST_NAME or NUM_LINES < 1:
         enable_fields()
         processing_label['text'] = "Invalid input. Try again"
         return
     
     disable_fields()
 
-    processing_label['text'] = f"Generating {NUM_LINES} lines from {ARTIST_URL}..."
+    processing_label['text'] = f"Generating {NUM_LINES} lines in the style of {ARTIST_NAME}..."
 
-    # Start the lyrics generation in a new thread
-    threading.Thread(target=process_lyrics).start()
+    threading.Thread(target=process_lyrics).start() # Start the lyrics generation in a new thread
     
+def get_artist_info (artist_name):
+    return musicbrainzngs.search_artists(artist=artist_name, strict=True)['artist-list'][0]
+
+def get_artist_id (artist_name):
+    return get_artist_info(artist_name)['id']
+
+def get_album_list (artist_name):
+    artist_id = get_artist_id(artist_name)
+    return musicbrainzngs.get_artist_by_id(artist_id, includes=['release-groups'])['artist']['release-group-list']
+
+# ! takes a bit of time, try optimizing
+def get_track_list (album_id):
+    try:
+        medium_list = musicbrainzngs.get_release_by_id(album_id, includes=['recordings'])['release']['medium-list']
+        
+        track_list = []
+        
+        for medium in medium_list:
+            for track in medium['track-list']:
+                track_list.append(track['recording']['title'])
+        return track_list
+    except IndexError:
+        raise(RuntimeError("No tracks found ."))
+    except NetworkError:
+        raise(RuntimeError("Network error."))
+
+# fetches info about the first/original release of a given album
+@lru_cache(maxsize=None)
+def get_album_info (album_id, artist_name):
+    release_list = musicbrainzngs.get_release_group_by_id(album_id, includes=['releases'], release_status='official')['release-group']['release-list']
+    if release_list:
+        return release_list[0]
+    else:
+        return None
+
+def get_all_songs():
+    global ALL_SONGS
+    global ARTIST_NAME
+    
+    album_list = get_album_list(ARTIST_NAME)
+    
+    # Add the progress bar
+    progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
+    progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
+    
+    # add the label
+    progress_label = Label(root, text='Getting album tracks...')
+    progress_label.grid(row=5, column=0, columnspan=2)
+    
+    progress_label2 = Label(root)
+    progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
+
+    progress_bar['maximum'] = len(album_list)
+    progress_bar['value'] = 0
+
+    for album in album_list:
+        album_info = get_album_info(album['id'], ARTIST_NAME)
+        if album_info is not None:
+            try:
+                ALL_SONGS += get_track_list(album_info['id'])
+                
+                progress_bar['value'] += 1  # Update the progress bar
+                progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
+                root.update_idletasks()  # Refresh the UI
+            except NetworkError:
+                print("Network error.")
+    
+    progress_label['text'] = 'Album tracks retrieved!'
+    progress_bar.destroy()
+    progress_label2.destroy()
+    
+    progress_label.destroy()
+    
+    clean_song_list()
+
 def process_lyrics():
-    write_lyrics_file(ARTIST_URL)
+    get_all_songs()
+    write_lyrics_file()
     generate_markov_lines(NUM_LINES)
     enable_fields()
     processing_label['text'] = "Lyrics generation complete."
@@ -132,12 +187,40 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
     except FileNotFoundError:
         print('No lyrics file found.')
 
-def write_lyrics_file(url, file_name = "lyrics.txt"):   
-    song_links = get_song_links(url)
+pattern = re.compile("\d+ Contributors|See .+ LiveGet tickets as low as \$\d+You might also like\n?|\d*Embed|.+ Lyrics\n?")
+def clean_up_lyrics (lyrics_str):
+    lyrics_str = re.sub(pattern, "", lyrics_str)
+    return re.sub("\n+", "\n", lyrics_str)
+
+def clean_song_list ():
+    global ALL_SONGS
+    
+    ALL_SONGS.sort() # sort list alphabetically
+    
+    seen_names = set()
+    
+    new_list = []
+    
+    for item in ALL_SONGS:
+        item_clean = re.sub(r" [\(|\]].*[\)|\]]", "", item) # remove any parentheticals from the album name
+        
+        item_clean = re.sub("(\'|\W)", "", item_clean) # remove any apostrophes from the album name
+        
+        if item_clean not in seen_names:
+            new_list.append(item)
+            seen_names.add(item_clean)
+    
+    ALL_SONGS = new_list
+
+def write_lyrics_file():
+    global ARTIST_NAME
+    global ALL_SONGS
     
     # Add the progress bar
     progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
     progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
+    
+    lyrics_str = ""
     
     # add the label
     progress_label = Label(root, text='Downloading lyrics...')
@@ -146,27 +229,30 @@ def write_lyrics_file(url, file_name = "lyrics.txt"):
     progress_label2 = Label(root)
     progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
 
-    progress_bar['maximum'] = len(song_links)
+    progress_bar['maximum'] = len(ALL_SONGS)
     progress_bar['value'] = 0
 
-    if not song_links:
-        print('No songs found')
-        return
-
-    with open('lyrics.txt', 'w', encoding='utf-8') as lyrics_original:
-        for x in song_links:
-            lyrics = get_lyrics(x)
-            if not lyrics:
-                continue
+    for song in ALL_SONGS:
+        try:
+            genius.verbose = False
+            genius.remove_section_headers = True
+        
+            if genius.search_song(song, ARTIST_NAME, get_full_info=False) is not None:
+                lyrics_str += genius.search_song(song, ARTIST_NAME, get_full_info=False).lyrics
+            
             progress_bar['value'] += 1  # Update the progress bar
             progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
             root.update_idletasks()  # Refresh the UI
-            lyrics_original.write(lyrics)
-            sleep (random.randint(2, 10)) # sleep for a random amount of time between 2 and 7 seconds to avoid ban from azlyrics
-
+        except AttributeError:
+            raise(RuntimeError("No lyrics found."))
+    
     progress_label['text'] = 'Lyrics downloaded!'
     progress_bar.destroy()
-    progress_label2.destroy()
+    progress_label2['text'] = ""
+    progress_label['text'] = ""
+    
+    with open("lyrics.txt", 'w', encoding='utf-8') as file:
+        file.write(clean_up_lyrics(lyrics_str))
 
 root = Tk()
 root.title('Markov Lyrics Generator')
