@@ -21,7 +21,7 @@ GENIUS_CLIENT_ID = '<REDACTED>'
 GENIUS_CLIENT_SECRET = '<REDACTED>'
 GENIUS_ACCESS_TOKEN = '<REDACTED>'
 
-genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN)
+genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN, timeout=10)
 musicbrainzngs.set_useragent("Markov Lyrics Generator", "0.1")
 
 NUM_LINES = 0
@@ -85,7 +85,7 @@ def get_user_input ():
     processing_label['text'] = f"Generating {NUM_LINES} lines in the style of {ARTIST_NAME}..."
 
     threading.Thread(target=process_lyrics).start() # Start the lyrics generation in a new thread
-    
+
 def get_artist_info (artist_name):
     return musicbrainzngs.search_artists(artist=artist_name, strict=True)['artist-list'][0]
 
@@ -186,6 +186,8 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
 
 pattern = re.compile("\d+ Contributors|See .+ LiveGet tickets as low as \$\d+You might also like\n?|\d*Embed|.+ Lyrics\n?")
 def clean_up_lyrics (lyrics_str):
+    if not lyrics_str:
+        return ""
     lyrics_str = re.sub(pattern, "", lyrics_str)
     return re.sub("\n+", "\n", lyrics_str)
 
@@ -195,13 +197,10 @@ def clean_song_list ():
     ALL_SONGS.sort() # sort list alphabetically
     
     seen_names = set()
-    
     new_list = []
     
     for item in ALL_SONGS:
-        item_clean = re.sub(r" [\(|\]].*[\)|\]]", "", item) # remove any parentheticals from the album name
-        
-        item_clean = re.sub("(\'|\W)", "", item_clean) # remove any apostrophes from the album name
+        item_clean = re.sub("(\'|\W)", "", re.sub(r" [\(|\]].*[\)|\]]", "", item))
         
         if item_clean not in seen_names:
             new_list.append(item)
@@ -216,8 +215,12 @@ def fetch_lyrics(song):
         current = genius.search_song(song, ARTIST_NAME, get_full_info=False)
         if current is not None:
             return current.lyrics
+        else:
+            return ""
     except AttributeError:
         raise(RuntimeError("No lyrics found."))
+    except requests.exceptions.Timeout:
+        print("Whoops! Timeout occurred.\n")
 
 def write_lyrics_file():
     global ARTIST_NAME
