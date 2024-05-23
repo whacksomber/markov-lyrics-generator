@@ -141,7 +141,7 @@ def get_all_songs():
     progress_bar['value'] = 0
 
     for album in album_list:
-        album_info = get_album_info(album['id'], ARTIST_NAME)
+        album_info = get_album_info(album['id'])
         if album_info is not None:
             try:
                 ALL_SONGS += get_track_list(album_info['id'])
