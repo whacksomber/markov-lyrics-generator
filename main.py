@@ -14,6 +14,8 @@ from musicbrainzngs import NetworkError
 import json
 import lyricsgenius
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
+import concurrent.futures
 
 GENIUS_CLIENT_ID = '<REDACTED>'
 GENIUS_CLIENT_SECRET = '<REDACTED>'
@@ -60,16 +62,13 @@ def get_num_lines():
         return None
     return num_lines
 
-# * I think this should be good enough
 def get_user_input ():
     global NUM_LINES
-    # global ARTIST_URL
     global ARTIST_NAME
     
-    NUM_LINES = get_num_lines() # this remains unchanged!
+    NUM_LINES = get_num_lines()
     
     try:
-        # ARTIST_URL = get_artist_url()
         ARTIST_NAME = get_artist_name()
     except RuntimeError as e:
         processing_label['text'] = str(e)
@@ -97,7 +96,6 @@ def get_album_list (artist_name):
     artist_id = get_artist_id(artist_name)
     return musicbrainzngs.get_artist_by_id(artist_id, includes=['release-groups'])['artist']['release-group-list']
 
-# ! takes a bit of time, try optimizing
 def get_track_list (album_id):
     try:
         medium_list = musicbrainzngs.get_release_by_id(album_id, includes=['recordings'])['release']['medium-list']
@@ -115,7 +113,7 @@ def get_track_list (album_id):
 
 # fetches info about the first/original release of a given album
 @lru_cache(maxsize=None)
-def get_album_info (album_id, artist_name):
+def get_album_info (album_id):
     release_list = musicbrainzngs.get_release_group_by_id(album_id, includes=['releases'], release_status='official')['release-group']['release-list']
     if release_list:
         return release_list[0]
@@ -157,7 +155,6 @@ def get_all_songs():
     progress_label['text'] = 'Album tracks retrieved!'
     progress_bar.destroy()
     progress_label2.destroy()
-    
     progress_label.destroy()
     
     clean_song_list()
@@ -212,6 +209,16 @@ def clean_song_list ():
     
     ALL_SONGS = new_list
 
+def fetch_lyrics(song):
+    try:
+        genius.verbose = False
+        genius.remove_section_headers = True
+        current = genius.search_song(song, ARTIST_NAME, get_full_info=False)
+        if current is not None:
+            return current.lyrics
+    except AttributeError:
+        raise(RuntimeError("No lyrics found."))
+
 def write_lyrics_file():
     global ARTIST_NAME
     global ALL_SONGS
@@ -220,39 +227,38 @@ def write_lyrics_file():
     progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
     progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
     
-    lyrics_str = ""
-    
     # add the label
     progress_label = Label(root, text='Downloading lyrics...')
     progress_label.grid(row=5, column=0, columnspan=2)
-    
     progress_label2 = Label(root)
     progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
-
     progress_bar['maximum'] = len(ALL_SONGS)
     progress_bar['value'] = 0
-
-    for song in ALL_SONGS:
-        try:
-            genius.verbose = False
-            genius.remove_section_headers = True
+    
+    lyrics_lines = []
+    
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_song = {executor.submit(fetch_lyrics, song): song for song in ALL_SONGS}
         
-            if genius.search_song(song, ARTIST_NAME, get_full_info=False) is not None:
-                lyrics_str += genius.search_song(song, ARTIST_NAME, get_full_info=False).lyrics
+        for future_lyrics in concurrent.futures.as_completed(future_to_song):
+            try:
+                lyrics_lines.append(future_lyrics.result())
+            except AttributeError:
+                raise(RuntimeError("No lyrics found."))
             
             progress_bar['value'] += 1  # Update the progress bar
             progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
             root.update_idletasks()  # Refresh the UI
-        except AttributeError:
-            raise(RuntimeError("No lyrics found."))
-    
+
     progress_label['text'] = 'Lyrics downloaded!'
     progress_bar.destroy()
     progress_label2['text'] = ""
     progress_label['text'] = ""
     
-    with open("lyrics.txt", 'w', encoding='utf-8') as file:
-        file.write(clean_up_lyrics(lyrics_str))
+    # write lyrics_lines to a file
+    with open('lyrics.txt', 'w', encoding='utf-8') as file:
+        for line in lyrics_lines:
+            file.write(clean_up_lyrics(line))
 
 root = Tk()
 root.title('Markov Lyrics Generator')
