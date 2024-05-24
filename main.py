@@ -24,8 +24,6 @@ GENIUS_ACCESS_TOKEN = '<REDACTED>'
 NUM_LINES = 0
 ARTIST_NAME = ""
 
-ALL_SONGS = []
-
 class MusicBrainzHandler:
     def __init__(self, artist_name):
         musicbrainzngs.set_useragent("Markov Lyrics Generator", "0.1")
@@ -33,7 +31,10 @@ class MusicBrainzHandler:
         self.set_artist_name()
         self.artist_id = self.get_artist_id()
         self.album_list = []
+        self.song_list = []
         
+        self.get_all_songs()
+    
     def set_artist_name (self):
         self.artist_name = self.artist_json['name']
     
@@ -71,7 +72,6 @@ class MusicBrainzHandler:
             raise(RuntimeError("Network error."))
 
     def get_all_songs(self):
-        global ALL_SONGS
         global ARTIST_NAME
         
         album_list = self.get_album_list()
@@ -94,7 +94,7 @@ class MusicBrainzHandler:
             album_info = self.get_album_info(album['id'])
             if album_info is not None:
                 try:
-                    ALL_SONGS += self.get_track_list(album_info['id'])
+                    self.song_list += self.get_track_list(album_info['id'])
                     
                     progress_bar['value'] += 1  # Update the progress bar
                     progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
@@ -108,30 +108,29 @@ class MusicBrainzHandler:
         progress_label.destroy()
         
         self.clean_song_list()
-    
-    def clean_song_list (self):
-        global ALL_SONGS
         
-        ALL_SONGS.sort() # sort list alphabetically
+    def clean_song_list (self):
+        self.song_list.sort() # sort list alphabetically
         
         seen_names = set()
         new_list = []
         
-        for item in ALL_SONGS:
+        for item in self.song_list:
             item_clean = re.sub("(\'|\W)", "", re.sub(r" [\(|\]].*[\)|\]]", "", item))
             
             if item_clean not in seen_names:
                 new_list.append(item)
                 seen_names.add(item_clean)
         
-        ALL_SONGS = new_list
+        self.song_list = new_list
 
 class LyricsGeniusHandler:
-    def __init__(self):
+    def __init__(self, song_list):
         self.genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN, timeout=10)
         self.genius.verbose = False
         self.genius.remove_section_headers = True
         self.pattern = re.compile("\d+ Contributors|See .+ LiveGet tickets as low as \$\d+You might also like\n?|\d*Embed|.+ Lyrics\n?|You might also like")
+        self.song_list = song_list
     
     def fetch_lyrics(self, song):
         global ARTIST_NAME
@@ -149,7 +148,6 @@ class LyricsGeniusHandler:
     
     def write_lyrics_file(self):
         global ARTIST_NAME
-        global ALL_SONGS
         
         # Add the progress bar
         progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
@@ -160,13 +158,13 @@ class LyricsGeniusHandler:
         progress_label.grid(row=5, column=0, columnspan=2)
         progress_label2 = Label(root)
         progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
-        progress_bar['maximum'] = len(ALL_SONGS)
+        progress_bar['maximum'] = len(self.song_list)
         progress_bar['value'] = 0
         
         lyrics_lines = []
         
         with ThreadPoolExecutor(max_workers=10) as executor:
-            future_to_song = {executor.submit(self.fetch_lyrics, song): song for song in ALL_SONGS}
+            future_to_song = {executor.submit(self.fetch_lyrics, song): song for song in self.song_list}
             
             for future_lyrics in concurrent.futures.as_completed(future_to_song):
                 try:
@@ -247,8 +245,8 @@ def get_user_input ():
     threading.Thread(target=process_lyrics).start() # Start the lyrics generation in a new thread
 
 def process_lyrics():
-    MusicBrainzHandler(ARTIST_NAME).get_all_songs()
-    LyricsGeniusHandler().write_lyrics_file()
+    all_songs = MusicBrainzHandler(ARTIST_NAME).song_list
+    LyricsGeniusHandler(all_songs).write_lyrics_file()
     generate_markov_lines(NUM_LINES)
     enable_fields()
     processing_label['text'] = "Lyrics generation complete."
