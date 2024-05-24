@@ -5,13 +5,13 @@ from tkinter import *
 from tkinter import ttk
 import threading
 import musicbrainzngs
-from musicbrainzngs import WebServiceError
 from musicbrainzngs import NetworkError
-import json
 import lyricsgenius
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
+import os
+import cProfile
 
 GENIUS_CLIENT_ID = '<REDACTED>'
 GENIUS_CLIENT_SECRET = '<REDACTED>'
@@ -102,12 +102,17 @@ class MusicBrainzHandler:
         
         progress_bar = progressBar(root, album_list, "Getting album tracks...")
 
-        for album in album_list:
-            album_info = self.get_album_info(album['id'])
-            if album_info is not None:
+        with ThreadPoolExecutor(max_workers=os.cpu_count()*5) as executor:
+            future_to_album = {executor.submit(self.get_album_info, album['id']): album for album in album_list}
+            
+            for future_album in concurrent.futures.as_completed(future_to_album):
+                album = future_to_album[future_album]
+                
                 try:
-                    self.song_list += self.get_track_list(album_info['id'])
-                    progress_bar.increment_progress()
+                    album_info = future_album.result()
+                    if album_info is not None:
+                        self.song_list += self.get_track_list(album_info['id'])
+                        progress_bar.increment_progress()
                 except NetworkError:
                     print("Network error.")
         
@@ -115,7 +120,7 @@ class MusicBrainzHandler:
         progress_bar.destroy()
         
         self.clean_song_list()
-        
+    
     def clean_song_list (self):
         self.song_list.sort() # sort list alphabetically
         
@@ -160,7 +165,7 @@ class LyricsGeniusHandler:
         
         lyrics_lines = []
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=os.cpu_count()*5) as executor:
             future_to_song = {executor.submit(self.fetch_lyrics, song): song for song in self.song_list}
             
             for future_lyrics in concurrent.futures.as_completed(future_to_song):
