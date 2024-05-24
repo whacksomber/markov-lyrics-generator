@@ -22,17 +22,101 @@ GENIUS_CLIENT_SECRET = '<REDACTED>'
 GENIUS_ACCESS_TOKEN = '<REDACTED>'
 
 genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN, timeout=10)
-musicbrainzngs.set_useragent("Markov Lyrics Generator", "0.1")
 
 NUM_LINES = 0
 ARTIST_NAME = ""
 
 ALL_SONGS = []
 
+class MusicBrainzHandler:
+    def __init__(self, artist_name):
+        musicbrainzngs.set_useragent("Markov Lyrics Generator", "0.1")
+        self.artist_json = self.get_artist_info(artist_name)
+        self.set_artist_name()
+        self.artist_id = self.get_artist_id()
+        self.album_list = []
+        
+    def set_artist_name (self):
+        self.artist_name = self.artist_json['name']
+    
+    def get_artist_info (self, artist_name):
+        return musicbrainzngs.search_artists(artist=artist_name, strict=True)['artist-list'][0]
+
+    def get_artist_id (self):
+        return self.artist_json['id']
+
+    def get_album_list (self):
+        return musicbrainzngs.get_artist_by_id(self.artist_id, includes=['release-groups'])['artist']['release-group-list']
+
+    # fetches info about the first/original release of a given album
+    @lru_cache(maxsize=None)
+    def get_album_info (self, album_id):
+        release_list = musicbrainzngs.get_release_group_by_id(album_id, includes=['releases'], release_status='official')['release-group']['release-list']
+        if release_list:
+            return release_list[0]
+        else:
+            return None
+    
+    def get_track_list (self, album_id):
+        try:
+            medium_list = musicbrainzngs.get_release_by_id(album_id, includes=['recordings'])['release']['medium-list']
+            
+            track_list = []
+            
+            for medium in medium_list:
+                for track in medium['track-list']:
+                    track_list.append(track['recording']['title'])
+            return track_list
+        except IndexError:
+            raise(RuntimeError("No tracks found ."))
+        except NetworkError:
+            raise(RuntimeError("Network error."))
+
+    def get_all_songs(self):
+        global ALL_SONGS
+        global ARTIST_NAME
+        
+        album_list = self.get_album_list()
+        
+        # Add the progress bar
+        progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
+        progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
+        
+        # add the label
+        progress_label = Label(root, text='Getting album tracks...')
+        progress_label.grid(row=5, column=0, columnspan=2)
+        
+        progress_label2 = Label(root)
+        progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
+
+        progress_bar['maximum'] = len(album_list)
+        progress_bar['value'] = 0
+
+        for album in album_list:
+            album_info = self.get_album_info(album['id'])
+            if album_info is not None:
+                try:
+                    ALL_SONGS += self.get_track_list(album_info['id'])
+                    
+                    progress_bar['value'] += 1  # Update the progress bar
+                    progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
+                    root.update_idletasks()  # Refresh the UI
+                except NetworkError:
+                    print("Network error.")
+        
+        progress_label['text'] = 'Album tracks retrieved!'
+        progress_bar.destroy()
+        progress_label2.destroy()
+        progress_label.destroy()
+        
+        clean_song_list()
+
+""" 
 def clean_up_artist_name (name):
     if name.startswith('the '):
         name = name[4:]
     return name.strip().lower().replace(' ', '')
+"""
 
 def enable_fields():
     for w in root.winfo_children():
@@ -86,81 +170,9 @@ def get_user_input ():
 
     threading.Thread(target=process_lyrics).start() # Start the lyrics generation in a new thread
 
-def get_artist_info (artist_name):
-    return musicbrainzngs.search_artists(artist=artist_name, strict=True)['artist-list'][0]
-
-def get_artist_id (artist_name):
-    return get_artist_info(artist_name)['id']
-
-def get_album_list (artist_name):
-    artist_id = get_artist_id(artist_name)
-    return musicbrainzngs.get_artist_by_id(artist_id, includes=['release-groups'])['artist']['release-group-list']
-
-def get_track_list (album_id):
-    try:
-        medium_list = musicbrainzngs.get_release_by_id(album_id, includes=['recordings'])['release']['medium-list']
-        
-        track_list = []
-        
-        for medium in medium_list:
-            for track in medium['track-list']:
-                track_list.append(track['recording']['title'])
-        return track_list
-    except IndexError:
-        raise(RuntimeError("No tracks found ."))
-    except NetworkError:
-        raise(RuntimeError("Network error."))
-
-# fetches info about the first/original release of a given album
-@lru_cache(maxsize=None)
-def get_album_info (album_id):
-    release_list = musicbrainzngs.get_release_group_by_id(album_id, includes=['releases'], release_status='official')['release-group']['release-list']
-    if release_list:
-        return release_list[0]
-    else:
-        return None
-
-def get_all_songs():
-    global ALL_SONGS
-    global ARTIST_NAME
-    
-    album_list = get_album_list(ARTIST_NAME)
-    
-    # Add the progress bar
-    progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
-    progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
-    
-    # add the label
-    progress_label = Label(root, text='Getting album tracks...')
-    progress_label.grid(row=5, column=0, columnspan=2)
-    
-    progress_label2 = Label(root)
-    progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
-
-    progress_bar['maximum'] = len(album_list)
-    progress_bar['value'] = 0
-
-    for album in album_list:
-        album_info = get_album_info(album['id'])
-        if album_info is not None:
-            try:
-                ALL_SONGS += get_track_list(album_info['id'])
-                
-                progress_bar['value'] += 1  # Update the progress bar
-                progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
-                root.update_idletasks()  # Refresh the UI
-            except NetworkError:
-                print("Network error.")
-    
-    progress_label['text'] = 'Album tracks retrieved!'
-    progress_bar.destroy()
-    progress_label2.destroy()
-    progress_label.destroy()
-    
-    clean_song_list()
-
 def process_lyrics():
-    get_all_songs()
+    mb = MusicBrainzHandler(ARTIST_NAME)
+    mb.get_all_songs()
     write_lyrics_file()
     generate_markov_lines(NUM_LINES)
     enable_fields()
