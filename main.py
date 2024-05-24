@@ -21,8 +21,6 @@ GENIUS_CLIENT_ID = '<REDACTED>'
 GENIUS_CLIENT_SECRET = '<REDACTED>'
 GENIUS_ACCESS_TOKEN = '<REDACTED>'
 
-genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN, timeout=10)
-
 NUM_LINES = 0
 ARTIST_NAME = ""
 
@@ -109,14 +107,92 @@ class MusicBrainzHandler:
         progress_label2.destroy()
         progress_label.destroy()
         
-        clean_song_list()
+        self.clean_song_list()
+    
+    def clean_song_list (self):
+        global ALL_SONGS
+        
+        ALL_SONGS.sort() # sort list alphabetically
+        
+        seen_names = set()
+        new_list = []
+        
+        for item in ALL_SONGS:
+            item_clean = re.sub("(\'|\W)", "", re.sub(r" [\(|\]].*[\)|\]]", "", item))
+            
+            if item_clean not in seen_names:
+                new_list.append(item)
+                seen_names.add(item_clean)
+        
+        ALL_SONGS = new_list
 
-""" 
-def clean_up_artist_name (name):
-    if name.startswith('the '):
-        name = name[4:]
-    return name.strip().lower().replace(' ', '')
-"""
+class LyricsGeniusHandler:
+    def __init__(self):
+        self.genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN, timeout=10)
+        self.genius.verbose = False
+        self.genius.remove_section_headers = True
+        self.pattern = re.compile("\d+ Contributors|See .+ LiveGet tickets as low as \$\d+You might also like\n?|\d*Embed|.+ Lyrics\n?|You might also like")
+    
+    def fetch_lyrics(self, song):
+        global ARTIST_NAME
+        
+        try:
+            current = self.genius.search_song(song, ARTIST_NAME, get_full_info=False)
+            if current is not None and current.artist.lower() == ARTIST_NAME.lower():
+                return current.lyrics
+            else:
+                return ""
+        except AttributeError:
+            raise(RuntimeError("No lyrics found."))
+        except requests.exceptions.Timeout:
+            print("Whoops! Timeout occurred.\n")
+    
+    def write_lyrics_file(self):
+        global ARTIST_NAME
+        global ALL_SONGS
+        
+        # Add the progress bar
+        progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
+        progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
+        
+        # add the label
+        progress_label = Label(root, text='Downloading lyrics...')
+        progress_label.grid(row=5, column=0, columnspan=2)
+        progress_label2 = Label(root)
+        progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
+        progress_bar['maximum'] = len(ALL_SONGS)
+        progress_bar['value'] = 0
+        
+        lyrics_lines = []
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_song = {executor.submit(self.fetch_lyrics, song): song for song in ALL_SONGS}
+            
+            for future_lyrics in concurrent.futures.as_completed(future_to_song):
+                try:
+                    lyrics_lines.append(future_lyrics.result())
+                except AttributeError:
+                    raise(RuntimeError("No lyrics found."))
+                
+                progress_bar['value'] += 1  # Update the progress bar
+                progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
+                root.update_idletasks()  # Refresh the UI
+
+        progress_label['text'] = 'Lyrics downloaded!'
+        progress_bar.destroy()
+        progress_label2['text'] = ""
+        progress_label['text'] = ""
+        
+        # write lyrics_lines to a file
+        with open('lyrics.txt', 'w', encoding='utf-8') as file:
+            for line in lyrics_lines:
+                file.write(self.clean_up_lyrics(line))
+    
+    def clean_up_lyrics (self,lyrics_str):
+        if not lyrics_str:
+            return ""
+        lyrics_str = re.sub(self.pattern, "", lyrics_str)
+        return re.sub("\n+", "\n", lyrics_str)
 
 def enable_fields():
     for w in root.winfo_children():
@@ -171,9 +247,8 @@ def get_user_input ():
     threading.Thread(target=process_lyrics).start() # Start the lyrics generation in a new thread
 
 def process_lyrics():
-    mb = MusicBrainzHandler(ARTIST_NAME)
-    mb.get_all_songs()
-    write_lyrics_file()
+    MusicBrainzHandler(ARTIST_NAME).get_all_songs()
+    LyricsGeniusHandler().write_lyrics_file()
     generate_markov_lines(NUM_LINES)
     enable_fields()
     processing_label['text'] = "Lyrics generation complete."
@@ -195,87 +270,6 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
             text_box.insert(END, f"{line}\n")        
     except FileNotFoundError:
         print('No lyrics file found.')
-
-pattern = re.compile("\d+ Contributors|See .+ LiveGet tickets as low as \$\d+You might also like\n?|\d*Embed|.+ Lyrics\n?")
-def clean_up_lyrics (lyrics_str):
-    if not lyrics_str:
-        return ""
-    lyrics_str = re.sub(pattern, "", lyrics_str)
-    return re.sub("\n+", "\n", lyrics_str)
-
-def clean_song_list ():
-    global ALL_SONGS
-    
-    ALL_SONGS.sort() # sort list alphabetically
-    
-    seen_names = set()
-    new_list = []
-    
-    for item in ALL_SONGS:
-        item_clean = re.sub("(\'|\W)", "", re.sub(r" [\(|\]].*[\)|\]]", "", item))
-        
-        if item_clean not in seen_names:
-            new_list.append(item)
-            seen_names.add(item_clean)
-    
-    ALL_SONGS = new_list
-
-def fetch_lyrics(song):
-    global ARTIST_NAME
-    
-    try:
-        genius.verbose = False
-        genius.remove_section_headers = True
-        current = genius.search_song(song, ARTIST_NAME, get_full_info=False)
-        if current is not None and current.artist.lower() == ARTIST_NAME.lower():
-            return current.lyrics
-        else:
-            return ""
-    except AttributeError:
-        raise(RuntimeError("No lyrics found."))
-    except requests.exceptions.Timeout:
-        print("Whoops! Timeout occurred.\n")
-
-def write_lyrics_file():
-    global ARTIST_NAME
-    global ALL_SONGS
-    
-    # Add the progress bar
-    progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
-    progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
-    
-    # add the label
-    progress_label = Label(root, text='Downloading lyrics...')
-    progress_label.grid(row=5, column=0, columnspan=2)
-    progress_label2 = Label(root)
-    progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
-    progress_bar['maximum'] = len(ALL_SONGS)
-    progress_bar['value'] = 0
-    
-    lyrics_lines = []
-    
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_song = {executor.submit(fetch_lyrics, song): song for song in ALL_SONGS}
-        
-        for future_lyrics in concurrent.futures.as_completed(future_to_song):
-            try:
-                lyrics_lines.append(future_lyrics.result())
-            except AttributeError:
-                raise(RuntimeError("No lyrics found."))
-            
-            progress_bar['value'] += 1  # Update the progress bar
-            progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
-            root.update_idletasks()  # Refresh the UI
-
-    progress_label['text'] = 'Lyrics downloaded!'
-    progress_bar.destroy()
-    progress_label2['text'] = ""
-    progress_label['text'] = ""
-    
-    # write lyrics_lines to a file
-    with open('lyrics.txt', 'w', encoding='utf-8') as file:
-        for line in lyrics_lines:
-            file.write(clean_up_lyrics(line))
 
 root = Tk()
 root.title('Markov Lyrics Generator')
