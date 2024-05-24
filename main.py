@@ -209,11 +209,13 @@ def clean_song_list ():
     ALL_SONGS = new_list
 
 def fetch_lyrics(song):
+    global ARTIST_NAME
+    
     try:
         genius.verbose = False
         genius.remove_section_headers = True
         current = genius.search_song(song, ARTIST_NAME, get_full_info=False)
-        if current is not None:
+        if current is not None and current.artist.lower() == ARTIST_NAME.lower():
             return current.lyrics
         else:
             return ""
