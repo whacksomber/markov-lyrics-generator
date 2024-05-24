@@ -1,10 +1,6 @@
 import requests
 import re
-from fake_useragent import UserAgent # also needed to avoid ban from azlyrics
-import random
-from time import sleep
 import markovify
-from bs4 import BeautifulSoup
 from tkinter import *
 from tkinter import ttk
 import threading
@@ -23,6 +19,34 @@ GENIUS_ACCESS_TOKEN = '<REDACTED>'
 
 NUM_LINES = 0
 ARTIST_NAME = ""
+
+class progressBar:
+    def __init__ (self, root, list_var, label_text):
+        self.progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
+        self.progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
+    
+        # add the text label (the one that goes underneath the progress bar)
+        self.progress_text_label = Label(root, text=label_text)
+        self.progress_text_label.grid(row=5, column=0, columnspan=2)
+
+        # add the value label (the one that shows the progress as a fraction to the side of the progress bar)
+        self.progress_value_label = Label(root)
+        self.progress_value_label.grid(row=4, column=2, columnspan=2, pady=10)
+        self.progress_bar['maximum'] = len(list_var)
+        self.progress_bar['value'] = 0
+    
+    def set_progress_text (self, text):
+        self.progress_text_label['text'] = text
+    
+    def increment_progress (self, increment_value=1):
+        self.progress_bar['value'] += increment_value
+        self.progress_value_label['text'] = f'{self.progress_bar["value"]}/{self.progress_bar["maximum"]}'
+        root.update_idletasks()
+    
+    def destroy (self):
+        self.progress_bar.destroy()
+        self.progress_value_label.destroy()
+        self.progress_text_label.destroy()
 
 class MusicBrainzHandler:
     def __init__(self, artist_name):
@@ -76,36 +100,19 @@ class MusicBrainzHandler:
         
         album_list = self.get_album_list()
         
-        # Add the progress bar
-        progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
-        progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
-        
-        # add the label
-        progress_label = Label(root, text='Getting album tracks...')
-        progress_label.grid(row=5, column=0, columnspan=2)
-        
-        progress_label2 = Label(root)
-        progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
-
-        progress_bar['maximum'] = len(album_list)
-        progress_bar['value'] = 0
+        progress_bar = progressBar(root, album_list, "Getting album tracks...")
 
         for album in album_list:
             album_info = self.get_album_info(album['id'])
             if album_info is not None:
                 try:
                     self.song_list += self.get_track_list(album_info['id'])
-                    
-                    progress_bar['value'] += 1  # Update the progress bar
-                    progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
-                    root.update_idletasks()  # Refresh the UI
+                    progress_bar.increment_progress()
                 except NetworkError:
                     print("Network error.")
         
-        progress_label['text'] = 'Album tracks retrieved!'
+        progress_bar.set_progress_text("Album tracks retrieved!")
         progress_bar.destroy()
-        progress_label2.destroy()
-        progress_label.destroy()
         
         self.clean_song_list()
         
@@ -149,17 +156,7 @@ class LyricsGeniusHandler:
     def write_lyrics_file(self):
         global ARTIST_NAME
         
-        # Add the progress bar
-        progress_bar = ttk.Progressbar(root, orient='horizontal', length=300, mode='determinate')
-        progress_bar.grid(row=4, column=0, columnspan=2, pady=10)
-        
-        # add the label
-        progress_label = Label(root, text='Downloading lyrics...')
-        progress_label.grid(row=5, column=0, columnspan=2)
-        progress_label2 = Label(root)
-        progress_label2.grid(row=4, column=2, columnspan=2, pady=10)
-        progress_bar['maximum'] = len(self.song_list)
-        progress_bar['value'] = 0
+        progress_bar = progressBar(root, self.song_list, "Downloading lyrics...")
         
         lyrics_lines = []
         
@@ -172,14 +169,10 @@ class LyricsGeniusHandler:
                 except AttributeError:
                     raise(RuntimeError("No lyrics found."))
                 
-                progress_bar['value'] += 1  # Update the progress bar
-                progress_label2['text'] = f'{progress_bar["value"]}/{progress_bar["maximum"]}'  # Update the label
-                root.update_idletasks()  # Refresh the UI
+                progress_bar.increment_progress()
 
-        progress_label['text'] = 'Lyrics downloaded!'
+        progress_bar.set_progress_text("Lyrics downloaded!")
         progress_bar.destroy()
-        progress_label2['text'] = ""
-        progress_label['text'] = ""
         
         # write lyrics_lines to a file
         with open('lyrics.txt', 'w', encoding='utf-8') as file:
@@ -229,18 +222,18 @@ def get_user_input ():
     try:
         ARTIST_NAME = get_artist_name()
     except RuntimeError as e:
-        processing_label['text'] = str(e)
+        change_processing_label(str(e))
         enable_fields()
         raise RuntimeError(str(e))
     
     if not NUM_LINES or not ARTIST_NAME or NUM_LINES < 1:
         enable_fields()
-        processing_label['text'] = "Invalid input. Try again"
+        change_processing_label("Invalid input. Try again.")
         return
     
     disable_fields()
 
-    processing_label['text'] = f"Generating {NUM_LINES} lines in the style of {ARTIST_NAME}..."
+    change_processing_label(f"Generating {NUM_LINES} lines in the style of {ARTIST_NAME}...")
 
     threading.Thread(target=process_lyrics).start() # Start the lyrics generation in a new thread
 
@@ -249,7 +242,7 @@ def process_lyrics():
     LyricsGeniusHandler(all_songs).write_lyrics_file()
     generate_markov_lines(NUM_LINES)
     enable_fields()
-    processing_label['text'] = "Lyrics generation complete."
+    change_processing_label("Lyrics generation complete.")
 
 def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
     try:
@@ -269,27 +262,34 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
     except FileNotFoundError:
         print('No lyrics file found.')
 
+def setup_gui (root):
+    global artist_var, num_var, processing_label
+    
+    root.title('Markov Lyrics Generator')
+    root.geometry('400x565')
+    
+    artist_var = StringVar()
+    num_var = IntVar()
+
+    input_fields = [
+        ('Artist Name: ', artist_var),
+        ('Number of lines: ', num_var)
+    ]
+
+    for i, (label, var) in enumerate(input_fields):
+        Label(root, text=label).grid(row=i, column=0)
+        Entry(root, textvariable=var).grid(row=i, column=1)
+
+    submit_button = Button(root, text='Generate Lyrics', command=get_user_input)
+    submit_button.grid(row=2, column=0, columnspan=2)
+
+    processing_label = Label(root)
+    processing_label.grid(row=3, column=0, columnspan=2)
+
+def change_processing_label (text):
+    processing_label['text'] = text
+
 root = Tk()
-root.title('Markov Lyrics Generator')
-
-root.geometry('400x565')
-
-artist_var = StringVar()
-num_var = IntVar()
-
-input_fields = [
-    ('Artist Name: ', artist_var),
-    ('Number of lines: ', num_var)
-]
-
-for i, (label, var) in enumerate(input_fields):
-    Label(root, text=label).grid(row=i, column=0)
-    Entry(root, textvariable=var).grid(row=i, column=1)
-
-submit_button = Button(root, text='Generate Lyrics', command=get_user_input)
-submit_button.grid(row=2, column=0, columnspan=2)
-
-processing_label = Label(root)
-processing_label.grid(row=3, column=0, columnspan=2)
+setup_gui(root)
 
 root.mainloop()
