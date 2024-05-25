@@ -11,7 +11,6 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 import os
-import cProfile
 
 GENIUS_CLIENT_ID = '<REDACTED>'
 GENIUS_CLIENT_SECRET = '<REDACTED>'
@@ -19,6 +18,8 @@ GENIUS_ACCESS_TOKEN = '<REDACTED>'
 
 NUM_LINES = 0
 ARTIST_NAME = ""
+
+THREAD_COUNT = os.cpu_count() * 1
 
 class progressBar:
     def __init__ (self, root, list_var, label_text):
@@ -40,7 +41,9 @@ class progressBar:
     
     def increment_progress (self, increment_value=1):
         self.progress_bar['value'] += increment_value
-        self.progress_value_label['text'] = f'{self.progress_bar["value"]}/{self.progress_bar["maximum"]}'
+        # self.progress_value_label['text'] = f'{self.progress_bar["value"]}/{self.progress_bar["maximum"]}'
+        progress_percentage = (self.progress_bar['value'] / self.progress_bar['maximum']) * 100
+        self.progress_value_label['text'] = f'{progress_percentage:.2f}%'
         root.update_idletasks()
     
     def destroy (self):
@@ -102,7 +105,7 @@ class MusicBrainzHandler:
         
         progress_bar = progressBar(root, album_list, "Getting album tracks...")
 
-        with ThreadPoolExecutor(max_workers=os.cpu_count()*5) as executor:
+        with ThreadPoolExecutor(max_workers=THREAD_COUNT) as executor:
             future_to_album = {executor.submit(self.get_album_info, album['id']): album for album in album_list}
             
             for future_album in concurrent.futures.as_completed(future_to_album):
@@ -165,7 +168,7 @@ class LyricsGeniusHandler:
         
         lyrics_lines = []
         
-        with ThreadPoolExecutor(max_workers=os.cpu_count()*5) as executor:
+        with ThreadPoolExecutor(max_workers=THREAD_COUNT) as executor:
             future_to_song = {executor.submit(self.fetch_lyrics, song): song for song in self.song_list}
             
             for future_lyrics in concurrent.futures.as_completed(future_to_song):
@@ -182,7 +185,7 @@ class LyricsGeniusHandler:
         # write lyrics_lines to a file
         with open('lyrics.txt', 'w', encoding='utf-8') as file:
             for line in lyrics_lines:
-                file.write(self.clean_up_lyrics(line))
+                file.write(self.clean_up_lyrics(line) + '\n')
     
     def clean_up_lyrics (self,lyrics_str):
         if not lyrics_str:
@@ -259,7 +262,7 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
                 print('No lyrics found.')
                 return
         
-        markovifyTextModel = markovify.Text(text)
+        markovifyTextModel = markovify.NewlineText(text)
         
         for i in range(num_lines):
             line = markovifyTextModel.make_sentence()
