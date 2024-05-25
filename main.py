@@ -11,6 +11,7 @@ from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 import os
+import time
 
 GENIUS_CLIENT_ID = '<REDACTED>'
 GENIUS_CLIENT_SECRET = '<REDACTED>'
@@ -41,9 +42,8 @@ class progressBar:
     
     def increment_progress (self, increment_value=1):
         self.progress_bar['value'] += increment_value
-        # self.progress_value_label['text'] = f'{self.progress_bar["value"]}/{self.progress_bar["maximum"]}'
         progress_percentage = (self.progress_bar['value'] / self.progress_bar['maximum']) * 100
-        self.progress_value_label['text'] = f'{progress_percentage:.2f}%'
+        self.progress_value_label['text'] = f'{self.progress_bar["value"]}/{self.progress_bar["maximum"]} ({progress_percentage:.1f}%)'
         root.update_idletasks()
     
     def destroy (self):
@@ -265,8 +265,10 @@ def generate_markov_lines(num_lines, file_name = "lyrics.txt"):
         markovifyTextModel = markovify.NewlineText(text)
         
         for i in range(num_lines):
+            attempts = 0
             line = markovifyTextModel.make_sentence()
-            text_box.insert(END, f"{line}\n")        
+            if line is not None:
+                text_box.insert(END, f"{line}\n")        
     except FileNotFoundError:
         print('No lyrics file found.')
 
@@ -274,7 +276,8 @@ def setup_gui (root):
     global artist_var, num_var, processing_label
     
     root.title('Markov Lyrics Generator')
-    root.geometry('400x565')
+    root.geometry('400x515')
+    root.resizable(0, 0)
     
     artist_var = StringVar()
     num_var = IntVar()
@@ -299,5 +302,6 @@ def change_processing_label (text):
 
 root = Tk()
 setup_gui(root)
-
 root.mainloop()
+end_time = time.time()
+print(f"Time taken: {end_time - start_time} seconds")
