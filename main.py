@@ -108,9 +108,7 @@ class MusicBrainzHandler:
         with ThreadPoolExecutor(max_workers=THREAD_COUNT) as executor:
             future_to_album = {executor.submit(self.get_album_info, album['id']): album for album in album_list}
             
-            for future_album in concurrent.futures.as_completed(future_to_album):
-                album = future_to_album[future_album]
-                
+            for future_album in concurrent.futures.as_completed(future_to_album):                
                 try:
                     album_info = future_album.result()
                     if album_info is not None:
@@ -304,4 +302,3 @@ root = Tk()
 setup_gui(root)
 root.mainloop()
 end_time = time.time()
-print(f"Time taken: {end_time - start_time} seconds")
