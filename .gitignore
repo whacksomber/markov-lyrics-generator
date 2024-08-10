@@ -3,3 +3,5 @@ original/
 test*.py
 *_test.py
 lyrics.txt
+roadmap.md
+*.env

@@ -12,10 +12,9 @@ from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 import os
 import time
+from dotenv import load_dotenv, dotenv_values 
 
-GENIUS_CLIENT_ID = '<REDACTED>'
-GENIUS_CLIENT_SECRET = '<REDACTED>'
-GENIUS_ACCESS_TOKEN = '<REDACTED>'
+load_dotenv()
 
 NUM_LINES = 0
 ARTIST_NAME = ""
@@ -139,7 +138,7 @@ class MusicBrainzHandler:
 
 class LyricsGeniusHandler:
     def __init__(self, song_list):
-        self.genius = lyricsgenius.Genius(GENIUS_ACCESS_TOKEN, timeout=10)
+        self.genius = lyricsgenius.Genius(os.getenv("GENIUS_ACCESS_TOKEN"), timeout=10)
         self.genius.verbose = False
         self.genius.remove_section_headers = True
         self.pattern = re.compile("\d+ Contributors|See .+ LiveGet tickets as low as \$\d+You might also like\n?|\d*Embed|.+ Lyrics\n?|You might also like")
